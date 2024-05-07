@@ -1,0 +1,6 @@
+ocr/
+sample/
+*.pdf
+__*
+*cache
+minio/

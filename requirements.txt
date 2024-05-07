@@ -1,0 +1,6 @@
+fastapi
+uvicorn
+openai
+pytest
+pytest-asyncio
+minio
