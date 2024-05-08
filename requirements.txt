@@ -4,3 +4,4 @@ openai
 pytest
 pytest-asyncio
 minio
+python-magic

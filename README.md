@@ -1,4 +1,4 @@
-DocSearch
+MicroDocSearch
 ===
 
 This repo implements a set of RESTful APIs that allows user to upload documents and search for relevant information using natural languages.
