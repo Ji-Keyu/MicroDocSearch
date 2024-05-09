@@ -25,7 +25,7 @@ max_file_size = 10 * 1024 * 1024  # 10 MB
 signed_url_ttl = 1 # hour
 
 @app.post("/upload")
-async def upload_files(files: List[UploadFile]):
+async def upload_files(files: List[UploadFile] = []):
     uploaded_files = []
 
     for file in files:
@@ -53,13 +53,12 @@ async def upload_files(files: List[UploadFile]):
                 content_type=file.content_type
             )
             signed_url = minio_client.presigned_get_object(bucket_name, file_id, expires=timedelta(hours=signed_url_ttl))
-            print(signed_url)
+            # print(signed_url)
+            uploaded_files.append({"file_id": file_id, "signed_url": signed_url})
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"Error uploading file: {str(e)}")
 
-        uploaded_files.append({"file_id": file_id, "signed_url": signed_url})
-        return {"uploaded_files": uploaded_files}
-
+    return {"uploaded_files": uploaded_files}
 
 @app.post("/ocr")
 async def ocr_endpoint():
