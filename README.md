@@ -10,5 +10,16 @@ This repo accepts three endpoints for POST:
 - `/extract`: takes a query text and an UUID of an uploaded file, performs a vector search and returns matching attributes. 
 
 # Getting Started
+The repo by default uses `text-embedding-3-small` for embeddings and `gpt-3.5-turbo-0125` for chat completion, both from OpenAI. 
+```sh
+cp .env_template .env
+# place corresponding API keys in .env
+set -a && source .env && set +a
+docker compose -f ./deployment/local/docker-compose.yml up --build
+```
 
 # Examples
+
+
+# Future consideration
+- Custom index at `/ocr` and `/extract`

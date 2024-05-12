@@ -1,7 +1,11 @@
 fastapi
 uvicorn
-openai
 pytest
 pytest-asyncio
 minio
 python-magic
+pinecone
+langchain
+langchain_pinecone
+langchain_openai
+langchainhub

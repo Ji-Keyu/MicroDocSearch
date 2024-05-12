@@ -8,8 +8,8 @@ RUN pip install --no-cache-dir -r requirements.txt
 # source
 WORKDIR /app
 COPY src src
-WORKDIR /app/src
+COPY ocr ocr
 
 # start
 # USER nonroot:nonroot
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["uvicorn", "src.main:app", "--host", "0.0.0.0", "--port", "8000"]

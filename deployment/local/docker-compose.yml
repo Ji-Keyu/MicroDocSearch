@@ -29,12 +29,12 @@ services:
     container_name: api
     ports:
       - "8000:8000"
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
     environment:
-      MINIO_ENDPOINT: host.docker.internal:9000
+      MINIO_ENDPOINT: minio:9000
       MINIO_ROOT_USER: minioadmin
       MINIO_ROOT_PASSWORD: minioadmin
+      OPENAI_API_KEY: $OPENAI_API_KEY
+      PINECONE_API_KEY: $PINECONE_API_KEY
     depends_on:
       - minio
     healthcheck:
