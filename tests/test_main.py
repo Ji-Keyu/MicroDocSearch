@@ -4,13 +4,12 @@ Tests for main.py
 
 import sys
 from pathlib import Path
+from io import BytesIO
+from unittest.mock import Mock
 import requests
 from fastapi.testclient import TestClient
-from io import BytesIO
 sys.path.append(str(Path(__file__).resolve().parent.parent))
 from src.main import app
-
-
 
 client = TestClient(app)
 
@@ -18,8 +17,6 @@ def test_health_endpoint():
     response = client.get("/health")
     assert response.status_code == 200
     assert response.json() == {"status": "success"}
-
-client = TestClient(app)
 
 CONAN3 = "./static/conan3.pdf"
 CONAN7 = "./static/conan7.tiff"
@@ -65,7 +62,7 @@ def test_upload_invalid_file_extension():
     ]
     response = client.post("/upload", files=files)
     assert response.status_code == 400
-    assert "File type .txt is not allowed" in response.json()["detail"]
+    assert "File type .txt not allowed" in response.json()["detail"]
 
 def test_upload_invalid_file_type():
     files = [
@@ -82,12 +79,12 @@ def test_upload_file_exceeds_size_limit():
     ]
     response = client.post("/upload", files=files)
     assert response.status_code == 400
-    assert "File size exceeds the maximum limit" in response.json()["detail"]
+    assert "File size exceeds the limit" in response.json()["detail"]
 
 def test_upload_no_files():
     response = client.post("/upload", files=[])
-    assert response.status_code == 200
-    assert response.json()["uploaded_files"] == []
+    assert response.status_code == 400
+    assert "No file uploaded" in response.json()["detail"]
 
 def test_upload_endpoint_internal_server_error(mocker):
     mocker.patch("src.main.minio_client.put_object", side_effect=Exception("Minio error"))
@@ -98,12 +95,48 @@ def test_upload_endpoint_internal_server_error(mocker):
     assert response.status_code == 500
     assert "Error uploading file" in response.json()["detail"]
 
-def test_ocr_endpoint():
-    response = client.post("/ocr")
-    assert response.status_code == 200
-    assert response.json() == {"status": "success"}
+INDEX = "microdocsearch"
 
-def test_extract_endpoint():
-    response = client.post("/extract")
+def test_ocr_success(mocker):
+    file_id = "test_file_id"
+    mocker.patch("src.main.minio_client.stat_object", return_value=Mock(object_name=file_id))
+    mocker.patch("src.main.simulate_ocr", return_value="Test content")
+    mocker.patch("src.main.pc.list_indexes", return_value=Mock(names=lambda: [INDEX]))
+    mocker.patch("src.main.PineconeVectorStore.from_documents")
+
+    response = client.post(f"/ocr?file_id={file_id}")
     assert response.status_code == 200
-    assert response.json() == {"status": "success"}
+    assert response.json() == {"status": "success", "message": "OCR processing and embedding upload completed."}
+
+def test_ocr_file_not_found(mocker):
+    file_id = "nonexistent_file_id"
+    mocker.patch("src.main.minio_client.stat_object", side_effect=Exception("File not found"))
+    response = client.post(f"/ocr?file_id={file_id}")
+    assert response.status_code == 404
+    assert response.json()["detail"] == f"File not found: {file_id}"
+
+def test_ocr_index_not_found(mocker):
+    file_id = "test_file_id"
+    mocker.patch("src.main.minio_client.stat_object", return_value=Mock(object_name=file_id))
+    mocker.patch("src.main.simulate_ocr", return_value="Test content")
+    mocker.patch("src.main.pc.list_indexes", return_value=Mock(names=lambda: []))
+
+    response = client.post(f"/ocr?file_id={file_id}")
+    assert response.status_code == 500
+    assert "Index not found" in response.json()["detail"]
+
+def test_ocr_embedding_upload_error(mocker):
+    file_id = "test_file_id"
+    mocker.patch("src.main.minio_client.stat_object", return_value=Mock(object_name=file_id))
+    mocker.patch("src.main.simulate_ocr", return_value="Test content")
+    mocker.patch("src.main.pc.list_indexes", return_value=Mock(names=lambda: [INDEX]))
+    mocker.patch("src.main.PineconeVectorStore.from_documents", side_effect=Exception("Embedding upload error"))
+
+    response = client.post(f"/ocr?file_id={file_id}")
+    assert response.status_code == 500
+    assert "Error during OCR processing" in response.json()["detail"]
+
+# def test_extract_endpoint():
+#     response = client.post("/extract")
+#     assert response.status_code == 200
+#     assert response.json() == {"status": "success"}

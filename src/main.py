@@ -10,7 +10,7 @@ import json
 from typing import Dict, List
 from datetime import timedelta
 import magic
-from fastapi import FastAPI, UploadFile, HTTPException
+from fastapi import FastAPI, UploadFile, HTTPException, File
 from minio import Minio
 from pinecone import Pinecone
 from langchain import hub
@@ -50,7 +50,7 @@ OCR_FILE = "./ocr/test2.json"
 pc = Pinecone()
 
 @app.post("/upload")
-async def upload_files(files: List[UploadFile]):
+async def upload_files(files: List[UploadFile] = File(None)):
     """
     Store uploaded file
 
@@ -61,6 +61,9 @@ async def upload_files(files: List[UploadFile]):
         {"uploaded_files": uploaded_files}
         Uploaded_files is list of Dict containing "file_id" and "signed_url"
     """
+    if not files:
+        raise HTTPException(status_code=400, detail="No file uploaded")
+
     uploaded_files = []
 
     for file in files:
