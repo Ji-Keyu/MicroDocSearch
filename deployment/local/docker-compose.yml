@@ -37,6 +37,8 @@ services:
       PINECONE_API_KEY: $PINECONE_API_KEY
     depends_on:
       - minio
+    volumes:
+      - ./ocr:/app/ocr
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
       interval: 5s

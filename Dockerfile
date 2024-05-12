@@ -8,7 +8,6 @@ RUN pip install --no-cache-dir -r requirements.txt
 # source
 WORKDIR /app
 COPY src src
-COPY ocr ocr
 
 # start
 # USER nonroot:nonroot
