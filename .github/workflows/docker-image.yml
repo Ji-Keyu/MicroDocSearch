@@ -15,9 +15,11 @@ jobs:
     steps:
     - uses: actions/checkout@v4
     - name: Build the Docker image
-      run: docker build . --file Dockerfile --tag my-image-name:$(date +%s)
+      run: |
+        docker build . --file Dockerfile --tag microdocsearch:latest
+        docker save microdocsearch:latest -o microdocsearch.tar
     - name: Upload a Build Artifact
       uses: actions/upload-artifact@v4.3.3
       with:
-        name: docker-image
-        path: docker-images/image.tar
+        name: microdocsearch
+        path: microdocsearch.tar
