@@ -1,12 +1,16 @@
+"""
+This module provides three endpoints to
+upload file, store contents' embeddings, and retrieve file content based on query
+"""
+
 import logging
 import uuid
 import os
-import magic
 import json
-from typing import Dict
+from typing import Dict, List
 from datetime import timedelta
-from fastapi import FastAPI, UploadFile, HTTPException, status
-from typing import List
+import magic
+from fastapi import FastAPI, UploadFile, HTTPException
 from minio import Minio
 from pinecone import Pinecone
 from langchain import hub
@@ -28,40 +32,46 @@ minio_client = Minio(
     secure=False,
 )
 
-bucket_name = "uploads"
-if not minio_client.bucket_exists(bucket_name):
-    minio_client.make_bucket(bucket_name)
+BUCKET = "uploads"
+if not minio_client.bucket_exists(BUCKET):
+    minio_client.make_bucket(BUCKET)
 
 allowed_extensions = [".pdf", ".tiff", ".png", ".jpeg", ".jpg"]
 allowed_mime_types = ["application/pdf", "image/tiff", "image/png", "image/jpeg"]
-max_file_size = 10 * 1024 * 1024  # 10 MB
-signed_url_ttl = 1 # hour
+MAX_FILE_SIZE = 10 * 1024 * 1024  # 10 MB
+TTL = 1 # hour
 
-ocr_results = {
-    "test1.pdf": json.load(open("./ocr/test1.json")),
-    "test2.pdf": json.load(open("./ocr/test2.json")),
-}
-
-embeddings_model = "text-embedding-3-small"
-chat_model = "gpt-3.5-turbo-0125"
-temperature = 0
-index_name = "microdocsearch"
-ocr_file = "./ocr/test2.json"
+EMBEDDING_MODEL = "text-embedding-3-small"
+CHAT_MODEL = "gpt-3.5-turbo-0125"
+TEMP = 0
+INDEX = "microdocsearch"
+OCR_FILE = "./ocr/test2.json"
 
 pc = Pinecone()
 
 @app.post("/upload")
-async def upload_files(files: List[UploadFile] = []):
+async def upload_files(files: List[UploadFile]):
+    """
+    Store uploaded file
+
+    Args:
+        files (List[UploadFile]): The files being uploaded
+
+    Returns:
+        {"uploaded_files": uploaded_files}
+        Uploaded_files is list of Dict containing "file_id" and "signed_url"
+    """
     uploaded_files = []
 
     for file in files:
-        if file.size > max_file_size:
-            raise HTTPException(status_code=400, detail=f"File size exceeds the maximum limit of {max_file_size} bytes.")
-        
+        if file.size > MAX_FILE_SIZE:
+            raise HTTPException(status_code=400,
+                                detail=f"File size exceeds the limit of {MAX_FILE_SIZE} bytes.")
+
         _, file_extension = os.path.splitext(file.filename.lower())
         if file_extension not in allowed_extensions:
-            raise HTTPException(status_code=400, detail=f"File type {file_extension} is not allowed.")
-        
+            raise HTTPException(status_code=400, detail=f"File type {file_extension} not allowed.")
+
         file_header = await file.read(2048)
         file_type = magic.from_buffer(file_header, mime=True)
         if file_type not in allowed_mime_types:
@@ -72,36 +82,54 @@ async def upload_files(files: List[UploadFile] = []):
 
         try:
             minio_client.put_object(
-                bucket_name=bucket_name,
+                bucket_name=BUCKET,
                 object_name=file_id,
                 data=file.file,
                 length=file.size,
                 content_type=file.content_type
             )
-            signed_url = minio_client.presigned_get_object(bucket_name, file_id, expires=timedelta(hours=signed_url_ttl))
+            signed_url = minio_client.presigned_get_object(BUCKET, file_id, timedelta(hours=TTL))
             # print(signed_url)
             uploaded_files.append({"file_id": file_id, "signed_url": signed_url})
         except Exception as e:
-            raise HTTPException(status_code=500, detail=f"Error uploading file: {str(e)}")
+            raise HTTPException(status_code=500, detail=f"Error uploading file: {str(e)}") from e
 
     return {"uploaded_files": uploaded_files}
 
-def simulate_ocr(file_name: str):
-    with open(ocr_file, "r") as file:
+def simulate_ocr(_: str):
+    """
+    Simulate OCR
+
+    Args:
+        file_id (str): The id of file to process
+
+    Returns:
+        prepared OCR result stored locally
+    """
+    with open(OCR_FILE, "r", encoding='utf-8') as file:
         data = json.load(file)
     content = data["analyzeResult"]["content"]
     return content
 
 @app.post("/ocr")
 async def ocr_endpoint(file_id: str):
+    """
+    Run OCR on specified file, turn into embeddings, and store in Pinecone db
+
+    Args:
+        file_id (str): The id of file to process
+
+    Returns:
+        {"status": "success", "message": "OCR processing and embedding upload completed."}
+    """
     try:
-        file_info = minio_client.stat_object(bucket_name, file_id)
+        file_info = minio_client.stat_object(BUCKET, file_id)
         file_name = file_info.object_name
     except Exception as e:
-        raise HTTPException(status_code=404, detail=f"File not found in storage: {file_id}")
+        raise HTTPException(status_code=404, detail=f"File not found: {file_id}") from e
 
     content = simulate_ocr(file_name)
-    
+
     try:
         text_splitter = RecursiveCharacterTextSplitter(
             chunk_size=1000,
@@ -119,50 +147,47 @@ async def ocr_endpoint(file_id: str):
                 "\u3002",  # Ideographic full stop
                 "",
             ],)
-        embeddings = OpenAIEmbeddings(model=embeddings_model)
-        
+        embeddings = OpenAIEmbeddings(model=EMBEDDING_MODEL)
+
         docs = text_splitter.create_documents([content])
 
-        if index_name not in pc.list_indexes().names():
-            raise HTTPException(status_code=500, detail=f"Index not found in Pinecone: {index_name}")
-        
-        PineconeVectorStore.from_documents(docs, embeddings, index_name=index_name)
-        
+        if INDEX not in pc.list_indexes().names():
+            raise HTTPException(status_code=500, detail=f"Index not found in db: {INDEX}")
+
+        PineconeVectorStore.from_documents(docs, embeddings, index_name=INDEX)
+
         return {"status": "success", "message": "OCR processing and embedding upload completed."}
-    
+
     except HTTPException as e:
         raise e
-    
+
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error during OCR processing: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error during OCR processing: {str(e)}") from e
 
 @app.post("/extract")
 async def extract_endpoint(query: str) -> Dict[str, str]:
     """
-    Extract relevant information from a given query using RAG, answer in natural language using OpenAI chat completion.
+    Extract relevant information from a given query using RAG
 
     Args:
         query (str): The question to search for and answer.
 
     Returns:
         Dict[str, str]: A dictionary containing the extracted response.
-
-    Raises:
-        ValueError: If the input query is empty or contains only whitespace.
     """
     if not query.strip():
         raise ValueError("Input query cannot be empty or contain only whitespace.")
 
     try:
-        embeddings = OpenAIEmbeddings(model=embeddings_model)
-        vectorstore = PineconeVectorStore(index_name=index_name, embedding=embeddings)
+        embeddings = OpenAIEmbeddings(model=EMBEDDING_MODEL)
+        vectorstore = PineconeVectorStore(index_name=INDEX, embedding=embeddings)
         retriever = vectorstore.as_retriever()
         prompt = hub.pull("rlm/rag-prompt")
-        # You are an assistant for question-answering tasks. Use the following pieces of 
-        # retrieved context to answer the question. If you don't know the answer, just say 
+        # You are an assistant for question-answering tasks. Use the following pieces of
+        # retrieved context to answer the question. If you don't know the answer, just say
         # that you don't know. Use three sentences maximum and keep the answer concise.\n
         # Question: {question} \nContext: {context} \nAnswer:
-        llm = ChatOpenAI(temperature=0, model=chat_model)
+        llm = ChatOpenAI(temperature=TEMP, model=CHAT_MODEL)
         rag_chain = (
             {"context": retriever , "question": RunnablePassthrough()}
             | prompt
@@ -170,17 +195,24 @@ async def extract_endpoint(query: str) -> Dict[str, str]:
             | StrOutputParser()
         )
         response = rag_chain.invoke(query)
-        logger.info(f"Extracted response: {response}")
-        
+        logger.info("Extracted response: %s", response)
+
         return {"response": response}
-    
+
     except HTTPException as e:
         raise e
-    
+
     except Exception as e:
-        logger.exception(f"An error occurred at /extract: {e}")
-        raise HTTPException(status_code=500, detail="An internal server error occurred.")
+        logger.exception("An error occurred at /extract: %s", str(e))
+        raise HTTPException(status_code=500, detail="An internal server error occurred.") from e
 
 @app.get("/health")
 async def health_endpoint():
+    """
+    Health check endpoint
+
+    Returns:
+        {"status": "success"}
+
+    """
     return {"status": "success"}

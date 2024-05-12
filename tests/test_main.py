@@ -1,11 +1,16 @@
+"""
+Tests for main.py
+"""
+
 import sys
-import requests
 from pathlib import Path
-
-sys.path.append(str(Path(__file__).resolve().parent.parent))
-
+import requests
 from fastapi.testclient import TestClient
+from io import BytesIO
+sys.path.append(str(Path(__file__).resolve().parent.parent))
 from src.main import app
+
+
 
 client = TestClient(app)
 
@@ -14,38 +19,38 @@ def test_health_endpoint():
     assert response.status_code == 200
     assert response.json() == {"status": "success"}
 
-from fastapi.testclient import TestClient
-from io import BytesIO
-
 client = TestClient(app)
 
-testfile_conan3 = "./static/conan3.pdf"
-testfile_conan7 = "./static/conan7.tiff"
-testfile_conan13 = "./static/conan13.jpg"
-testfile_conan18 = "./static/conan18.png"
-testfile_conan26 = "./static/conan26.jpg"
+CONAN3 = "./static/conan3.pdf"
+CONAN7 = "./static/conan7.tiff"
+CONAN13 = "./static/conan13.jpg"
+CONAN18 = "./static/conan18.png"
+CONAN26 = "./static/conan26.jpg"
 testfiles = [
-    testfile_conan3,
-    testfile_conan7,
-    testfile_conan13,
-    testfile_conan18,
-    testfile_conan26,
+    CONAN3,
+    CONAN7,
+    CONAN13,
+    CONAN18,
+    CONAN26,
 ]
 
 def test_upload_valid_files():
     files = [("files", open(i, "rb")) for i in testfiles]
     response = client.post("/upload", files=files)
-    assert response.status_code == 200, f"Expected status code 200, but got {response.status_code}. Response content: {response.text}"
+    assert response.status_code == 200, f"Expected status code 200, \
+        but got {response.status_code}. Response content: {response.text}"
     assert "uploaded_files" in response.json()
     assert len(response.json()["uploaded_files"]) == len(files)
     uploaded_files = response.json()["uploaded_files"]
     for i, file in enumerate(uploaded_files):
-        assert "file_id" in file, f"Expected 'file_id' in uploaded file, but got: {file}. Response content: {response.text}"
-        assert "signed_url" in file, f"Expected 'signed_url' in uploaded file, but got: {file}. Response content: {response.text}"
-        
+        assert "file_id" in file, f"Expected 'file_id' in uploaded file, \
+            but got: {file}. Response content: {response.text}"
+        assert "signed_url" in file, f"Expected 'signed_url' in uploaded file, \
+            but got: {file}. Response content: {response.text}"
+
         signed_url = file["signed_url"]
-        downloaded_file = requests.get(signed_url)
-        
+        downloaded_file = requests.get(signed_url, timeout=5)
+
         original_file_path = testfiles[i]
         with open(original_file_path, "rb") as original_file:
             original_content = original_file.read()
@@ -87,7 +92,7 @@ def test_upload_no_files():
 def test_upload_endpoint_internal_server_error(mocker):
     mocker.patch("src.main.minio_client.put_object", side_effect=Exception("Minio error"))
     files = [
-        ("files", open(testfile_conan3, "rb"))
+        ("files", open(CONAN3, "rb"))
     ]
     response = client.post("/upload", files=files)
     assert response.status_code == 500
