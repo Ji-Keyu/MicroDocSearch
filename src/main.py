@@ -10,7 +10,7 @@ import json
 from typing import Dict, List
 from datetime import timedelta
 import magic
-from fastapi import FastAPI, UploadFile, HTTPException, File
+from fastapi import FastAPI, UploadFile, HTTPException, File, Query
 from minio import Minio
 from pinecone import Pinecone
 from langchain import hub
@@ -33,8 +33,6 @@ minio_client = Minio(
 )
 
 BUCKET = "uploads"
-if not minio_client.bucket_exists(BUCKET):
-    minio_client.make_bucket(BUCKET)
 
 allowed_extensions = [".pdf", ".tiff", ".png", ".jpeg", ".jpg"]
 allowed_mime_types = ["application/pdf", "image/tiff", "image/png", "image/jpeg"]
@@ -65,6 +63,9 @@ async def upload_files(files: List[UploadFile] = File(None)):
         raise HTTPException(status_code=400, detail="No file uploaded")
 
     uploaded_files = []
+
+    if not minio_client.bucket_exists(BUCKET):
+        minio_client.make_bucket(BUCKET)
 
     for file in files:
         if file.size > MAX_FILE_SIZE:
@@ -168,7 +169,7 @@ async def ocr_endpoint(file_id: str):
         raise HTTPException(status_code=500, detail=f"Error during OCR processing: {str(e)}") from e
 
 @app.post("/extract")
-async def extract_endpoint(query: str) -> Dict[str, str]:
+async def extract_endpoint(query: str = Query("", min_length=1)) -> Dict[str, str]:
     """
     Extract relevant information from a given query using RAG
 
@@ -178,8 +179,8 @@ async def extract_endpoint(query: str) -> Dict[str, str]:
     Returns:
         Dict[str, str]: A dictionary containing the extracted response.
     """
-    if not query.strip():
-        raise ValueError("Input query cannot be empty or contain only whitespace.")
+    if not query or not query.strip():
+        raise HTTPException(status_code=400, detail="Query cannot be empty or of only whitespace.")
 
     try:
         embeddings = OpenAIEmbeddings(model=EMBEDDING_MODEL)
