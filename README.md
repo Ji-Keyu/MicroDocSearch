@@ -1,7 +1,7 @@
 MicroDocSearch
 ===
 
-This repo implements a set of RESTful APIs that allows user to upload documents and search for relevant information using natural languages.
+This repo implements a set of APIs that allows user to upload documents and search for relevant information using natural languages. The documents and query don't need to be of the same language.
 
 # Function
 This repo accepts three endpoints for POST:
@@ -31,14 +31,37 @@ The `test.json` should contain the OCR'ed content at `[analyzeResult][content]`.
 
 # Examples
 With a browser, go to `localhost:8000/docs` and use the built-in UI for FastAPI.
+
 Without a browser, use `curl` to test manually.
+- `/upload`
+```bash
+$ curl -X POST -F "files=@./static/conan13.jpg" http://localhost:8000/upload
+{"uploaded_files":[{"file_id":"4240d7d9-aba8-4925-b2a1-024ce0302668","signed_url":"http://host.docker.internal:9000/uploads/4240d7d9-aba8-4925-b2a1-024ce0302668?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=minioadmin%2F20240514%2Fus-east-1%2Fs3%2Faws4_request&X-Amz-Date=20240514T225202Z&X-Amz-Expires=3600&X-Amz-SignedHeaders=host&X-Amz-Signature=83c1d0f9748a63d8a1e4eca448650b61da1a90f6ef0d500d4a0ce2a87f092478"}]}
+```
+The minio console should show the file uploaded.
 Note that to use the presigned url returned, one needs to add the following lines to `/etc/hosts`
 ```
 127.0.0.1 host.docker.internal
 127.0.0.1 gateway.docker.internal
 ```
+- `/ocr`
+```bash
+$ curl -X POST "http://localhost:8000/ocr?file_id=4240d7d9-aba8-4925-b2a1-024ce0302668" # might take a while
+{"status":"success","message":"OCR processing and embedding upload completed."}
+```
+The Pinecone page should now show the vectors stored.
+- `/extract`
+```bash
+$ curl -X POST "http://localhost:8000/extract?query=the%20height%20limit%20of%20building%20construction"
+{"response":"The height limit of building construction is determined by the number of floors excluding the basement, ensuring it does not fall below a certain value. The restrictions on building height are based on the regulations specified in the relevant laws and are not more stringent than those outlined in the law. The height limit is also influenced by factors such as the area's characteristics and the need to preserve a good landscape."}
+```
+
+
+
 
 # Future consideration
+- Refined doc content splitting design according to purpose
+  - For instance, for regulation documents specifically, can split content according to each individual rule
 - Custom bucket at `/upload`
 - Custom index at `/ocr` and `/extract`
 - Spin up multiple minio instances for redundancy
