@@ -34,6 +34,9 @@ minio_client = Minio(
 
 BUCKET = "uploads"
 
+if not minio_client.bucket_exists(BUCKET):
+    minio_client.make_bucket(BUCKET)
+
 allowed_extensions = [".pdf", ".tiff", ".png", ".jpeg", ".jpg"]
 allowed_mime_types = ["application/pdf", "image/tiff", "image/png", "image/jpeg"]
 MAX_FILE_SIZE = 10 * 1024 * 1024  # 10 MB
@@ -63,9 +66,6 @@ async def upload_files(files: List[UploadFile] = File(None)):
         raise HTTPException(status_code=400, detail="No file uploaded")
 
     uploaded_files = []
-
-    if not minio_client.bucket_exists(BUCKET):
-        minio_client.make_bucket(BUCKET)
 
     for file in files:
         if file.size > MAX_FILE_SIZE:
