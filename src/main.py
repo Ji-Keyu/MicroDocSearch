@@ -61,7 +61,7 @@ async def upload_files(files: List[UploadFile] = File(None)):
     """
     if not files:
         raise HTTPException(status_code=400, detail="No file uploaded")
-    
+
     if not minio_client.bucket_exists(BUCKET):
         minio_client.make_bucket(BUCKET)
 
@@ -80,7 +80,7 @@ async def upload_files(files: List[UploadFile] = File(None)):
         file_type = magic.from_buffer(file_header, mime=True)
         if file_type not in allowed_mime_types:
             raise HTTPException(status_code=400, detail=f"File type {file_type} is not allowed.")
-        file.file.seek(0)
+        await file.seek(0)
 
         file_id = str(uuid.uuid4())
 
@@ -164,9 +164,11 @@ async def ocr_endpoint(file_id: str):
         return {"status": "success", "message": "OCR processing and embedding upload completed."}
 
     except HTTPException as e:
+        logger.exception("Error during OCR processing: %s", str(e))
         raise e
 
     except Exception as e:
+        logger.exception("Error during OCR processing: %s", str(e))
         raise HTTPException(status_code=500, detail=f"Error during OCR processing: {str(e)}") from e
 
 @app.post("/extract")
@@ -205,6 +207,7 @@ async def extract_endpoint(query: str = Query("", min_length=1)) -> Dict[str, st
         return {"response": response}
 
     except HTTPException as e:
+        logger.exception("An error occurred at /extract: %s", str(e))
         raise e
 
     except Exception as e:

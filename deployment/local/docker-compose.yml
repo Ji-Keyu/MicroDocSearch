@@ -15,7 +15,7 @@ services:
     command: server /data --console-address ":9001"
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
-      interval: 5s
+      interval: 10s
       timeout: 1s
       retries: 5
       start_period: 1s
@@ -41,7 +41,7 @@ services:
       - ./ocr:/app/ocr
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
-      interval: 5s
+      interval: 10s
       timeout: 1s
       retries: 5
       start_period: 1s
