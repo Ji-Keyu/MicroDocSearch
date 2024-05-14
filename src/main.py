@@ -34,9 +34,6 @@ minio_client = Minio(
 
 BUCKET = "uploads"
 
-if not minio_client.bucket_exists(BUCKET):
-    minio_client.make_bucket(BUCKET)
-
 allowed_extensions = [".pdf", ".tiff", ".png", ".jpeg", ".jpg"]
 allowed_mime_types = ["application/pdf", "image/tiff", "image/png", "image/jpeg"]
 MAX_FILE_SIZE = 10 * 1024 * 1024  # 10 MB
@@ -46,7 +43,7 @@ EMBEDDING_MODEL = "text-embedding-3-small"
 CHAT_MODEL = "gpt-3.5-turbo-0125"
 TEMP = 0
 INDEX = "microdocsearch"
-OCR_FILE = "./ocr/test2.json"
+OCR_FILE = "./ocr/test.json"
 
 pc = Pinecone()
 
@@ -60,10 +57,13 @@ async def upload_files(files: List[UploadFile] = File(None)):
 
     Returns:
         {"uploaded_files": uploaded_files}
-        Uploaded_files is list of Dict containing "file_id" and "signed_url"
+        uploaded_files is list of Dict containing "file_id" and "signed_url"
     """
     if not files:
         raise HTTPException(status_code=400, detail="No file uploaded")
+    
+    if not minio_client.bucket_exists(BUCKET):
+        minio_client.make_bucket(BUCKET)
 
     uploaded_files = []
 
@@ -96,6 +96,7 @@ async def upload_files(files: List[UploadFile] = File(None)):
             # print(signed_url)
             uploaded_files.append({"file_id": file_id, "signed_url": signed_url})
         except Exception as e:
+            logger.exception("Error uploading file %s", str(e))
             raise HTTPException(status_code=500, detail=f"Error uploading file: {str(e)}") from e
 
     return {"uploaded_files": uploaded_files}
@@ -177,7 +178,7 @@ async def extract_endpoint(query: str = Query("", min_length=1)) -> Dict[str, st
         query (str): The question to search for and answer.
 
     Returns:
-        Dict[str, str]: A dictionary containing the extracted response.
+        {"response": response}, where response is the answer to the question.
     """
     if not query or not query.strip():
         raise HTTPException(status_code=400, detail="Query cannot be empty or of only whitespace.")
