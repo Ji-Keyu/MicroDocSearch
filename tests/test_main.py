@@ -65,7 +65,15 @@ def test_upload_invalid_file_extension(mocker):
     ]
     response = client.post("/upload", files=files)
     assert response.status_code == 400
-    assert "File type .txt not allowed" in response.json()["detail"]
+    assert "type .txt not allowed" in response.json()["detail"]
+
+def test_upload_mixed_valid_and_invalid_files():
+    files = [("files", open(i, "rb")) for i in testfiles]
+    invalid_file = ("files", ("invalid.txt", BytesIO(b"Invalid"), "text/plain"))
+    files.append(invalid_file)
+    response = client.post("/upload", files=files)
+    assert response.status_code == 400
+    assert "type .txt not allowed" in response.json()["detail"]
 
 def test_upload_invalid_file_type(mocker):
     mocker.patch("src.main.minio_client.bucket_exists", return_value=True)
@@ -74,7 +82,7 @@ def test_upload_invalid_file_type(mocker):
     ]
     response = client.post("/upload", files=files)
     assert response.status_code == 400
-    assert "File type text/plain is not allowed" in response.json()["detail"]
+    assert "type text/plain is not allowed" in response.json()["detail"]
 
 def test_upload_file_exceeds_size_limit(mocker):
     mocker.patch("src.main.minio_client.bucket_exists", return_value=True)
@@ -84,7 +92,7 @@ def test_upload_file_exceeds_size_limit(mocker):
     ]
     response = client.post("/upload", files=files)
     assert response.status_code == 400
-    assert "File size exceeds the limit" in response.json()["detail"]
+    assert "size exceeds the limit" in response.json()["detail"]
 
 def test_upload_no_files(mocker):
     mocker.patch("src.main.minio_client.bucket_exists", return_value=True)

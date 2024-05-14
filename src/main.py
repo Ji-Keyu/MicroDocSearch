@@ -50,7 +50,11 @@ pc = Pinecone()
 @app.post("/upload")
 async def upload_files(files: List[UploadFile] = File(None)):
     """
-    Store uploaded file
+    Accepts one or more file uploads.
+    Only accepts pdf, tiff, png, jpeg formats.
+    Limit to 10MB per file.
+    Only succeed when all files are valid.
+    Signed URL expires in 1hr.
 
     Args:
         files (List[UploadFile]): The files being uploaded
@@ -62,26 +66,27 @@ async def upload_files(files: List[UploadFile] = File(None)):
     if not files:
         raise HTTPException(status_code=400, detail="No file uploaded")
 
-    if not minio_client.bucket_exists(BUCKET):
-        minio_client.make_bucket(BUCKET)
-
     uploaded_files = []
 
     for file in files:
         if file.size > MAX_FILE_SIZE:
             raise HTTPException(status_code=400,
-                                detail=f"File size exceeds the limit of {MAX_FILE_SIZE} bytes.")
+                                detail=f"{file.filename} size exceeds the limit of {MAX_FILE_SIZE} bytes.")
 
         _, file_extension = os.path.splitext(file.filename.lower())
         if file_extension not in allowed_extensions:
-            raise HTTPException(status_code=400, detail=f"File type {file_extension} not allowed.")
+            raise HTTPException(status_code=400, detail=f"{file.filename} type {file_extension} not allowed.")
 
         file_header = await file.read(2048)
         file_type = magic.from_buffer(file_header, mime=True)
         if file_type not in allowed_mime_types:
-            raise HTTPException(status_code=400, detail=f"File type {file_type} is not allowed.")
+            raise HTTPException(status_code=400, detail=f"{file.filename} type {file_type} is not allowed.")
         await file.seek(0)
 
+    if not minio_client.bucket_exists(BUCKET):
+        minio_client.make_bucket(BUCKET)
+
+    for file in files:
         file_id = str(uuid.uuid4())
 
         try:
