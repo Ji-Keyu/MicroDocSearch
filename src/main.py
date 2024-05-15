@@ -12,7 +12,7 @@ from datetime import timedelta
 import magic
 from fastapi import FastAPI, UploadFile, HTTPException, File, Query
 from minio import Minio
-from pinecone import Pinecone
+from pinecone import Pinecone, ServerlessSpec
 from langchain import hub
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain_pinecone import PineconeVectorStore
@@ -41,8 +41,8 @@ TTL = 1 # hour
 
 EMBEDDING_MODEL = "text-embedding-3-small"
 CHAT_MODEL = "gpt-3.5-turbo-0125"
+PINECONE_DIMENSION = 1536
 TEMP = 0
-INDEX = "microdocsearch"
 OCR_FILE = "./ocr/test.json"
 
 pc = Pinecone()
@@ -122,7 +122,7 @@ def simulate_ocr(_: str):
     return content
 
 @app.post("/ocr")
-async def ocr_endpoint(file_id: str):
+async def ocr_endpoint(file_id: str = Query("", min_length=1)):
     """
     Run OCR on specified file, turn into embeddings, and store in Pinecone db
 
@@ -132,11 +132,27 @@ async def ocr_endpoint(file_id: str):
     Returns:
         {"status": "success", "message": "OCR processing and embedding upload completed."}
     """
+    if not file_id or not file_id.strip():
+        raise HTTPException(status_code=400, detail="File ID cannot be empty or of only whitespace.")
+
     try:
         file_info = minio_client.stat_object(BUCKET, file_id)
         file_name = file_info.object_name
     except Exception as e:
         raise HTTPException(status_code=404, detail=f"File not found: {file_id}") from e
+    
+    if file_id in pc.list_indexes().names():
+        raise HTTPException(status_code=400, detail=f"{file_id} index already exists in db")
+    else:
+        pc.create_index(
+            name=file_id,
+            dimension=PINECONE_DIMENSION,
+            metric="cosine",
+            spec=ServerlessSpec(
+                cloud="aws",
+                region="us-east-1"
+            )
+        )
 
     content = simulate_ocr(file_name)
 
@@ -158,13 +174,8 @@ async def ocr_endpoint(file_id: str):
                 "",
             ],)
         embeddings = OpenAIEmbeddings(model=EMBEDDING_MODEL)
-
         docs = text_splitter.create_documents([content])
-
-        if INDEX not in pc.list_indexes().names():
-            raise HTTPException(status_code=500, detail=f"Index not found in db: {INDEX}")
-
-        PineconeVectorStore.from_documents(docs, embeddings, index_name=INDEX)
+        PineconeVectorStore.from_documents(docs, embeddings, index_name=file_id)
 
         return {"status": "success", "message": "OCR processing and embedding upload completed."}
 
@@ -177,22 +188,27 @@ async def ocr_endpoint(file_id: str):
         raise HTTPException(status_code=500, detail=f"Error during OCR processing: {str(e)}") from e
 
 @app.post("/extract")
-async def extract_endpoint(query: str = Query("", min_length=1)) -> Dict[str, str]:
+async def extract_endpoint(file_id: str = Query("", min_length=1), query: str = Query("", min_length=1)):
     """
     Extract relevant information from a given query using RAG
 
     Args:
+        file_id (str): The identifier of the file to search from
         query (str): The question to search for and answer.
 
     Returns:
         {"response": response}, where response is the answer to the question.
     """
+    if not file_id or not file_id.strip():
+        raise HTTPException(status_code=400, detail="File ID cannot be empty or of only whitespace")
     if not query or not query.strip():
-        raise HTTPException(status_code=400, detail="Query cannot be empty or of only whitespace.")
+        raise HTTPException(status_code=400, detail="Query cannot be empty or of only whitespace")
+    if file_id not in pc.list_indexes().names():
+        raise HTTPException(status_code=400, detail=f"Index {file_id} not found in db")
 
     try:
         embeddings = OpenAIEmbeddings(model=EMBEDDING_MODEL)
-        vectorstore = PineconeVectorStore(index_name=INDEX, embedding=embeddings)
+        vectorstore = PineconeVectorStore(index_name=file_id, embedding=embeddings)
         retriever = vectorstore.as_retriever()
         prompt = hub.pull("rlm/rag-prompt")
         # You are an assistant for question-answering tasks. Use the following pieces of
@@ -217,7 +233,7 @@ async def extract_endpoint(query: str = Query("", min_length=1)) -> Dict[str, st
 
     except Exception as e:
         logger.exception("An error occurred at /extract: %s", str(e))
-        raise HTTPException(status_code=500, detail="An internal server error occurred.") from e
+        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}") from e
 
 @app.get("/health")
 async def health_endpoint():

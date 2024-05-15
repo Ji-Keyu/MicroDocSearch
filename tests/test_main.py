@@ -115,6 +115,7 @@ def test_ocr_success(mocker):
     mocker.patch("src.main.minio_client.stat_object", return_value=Mock(object_name=file_id))
     mocker.patch("src.main.simulate_ocr", return_value="Test content")
     mocker.patch("src.main.pc.list_indexes", return_value=Mock(names=lambda: [INDEX]))
+    mocker.patch("src.main.pc.create_index")
     mocker.patch("src.main.PineconeVectorStore.from_documents")
 
     response = client.post(f"/ocr?file_id={file_id}")
@@ -128,21 +129,22 @@ def test_ocr_file_not_found(mocker):
     assert response.status_code == 404
     assert response.json()["detail"] == f"File not found: {file_id}"
 
-def test_ocr_index_not_found(mocker):
+def test_ocr_index_already_exists(mocker):
     file_id = "test_file_id"
     mocker.patch("src.main.minio_client.stat_object", return_value=Mock(object_name=file_id))
     mocker.patch("src.main.simulate_ocr", return_value="Test content")
-    mocker.patch("src.main.pc.list_indexes", return_value=Mock(names=lambda: []))
+    mocker.patch("src.main.pc.list_indexes", return_value=Mock(names=lambda: [file_id]))
 
     response = client.post(f"/ocr?file_id={file_id}")
-    assert response.status_code == 500
-    assert "Index not found" in response.json()["detail"]
+    assert response.status_code == 400
+    assert "index already exists" in response.json()["detail"]
 
 def test_ocr_embedding_upload_error(mocker):
     file_id = "test_file_id"
     mocker.patch("src.main.minio_client.stat_object", return_value=Mock(object_name=file_id))
     mocker.patch("src.main.simulate_ocr", return_value="Test content")
     mocker.patch("src.main.pc.list_indexes", return_value=Mock(names=lambda: [INDEX]))
+    mocker.patch("src.main.pc.create_index")
     mocker.patch("src.main.PineconeVectorStore.from_documents", side_effect=Exception("Embedding upload error"))
     response = client.post(f"/ocr?file_id={file_id}")
     assert response.status_code == 500
@@ -150,21 +152,32 @@ def test_ocr_embedding_upload_error(mocker):
 
 def test_extract_empty_query():
     query = "   "
-    response = client.post("/extract", params={"query": query})
+    file_id = "test_file_id"
+    response = client.post("/extract", params={"query": query, "file_id": file_id})
     assert response.status_code == 400
     assert "detail" in response.json()
-    assert "Query cannot be empty or of only whitespace." in response.json()["detail"]
+    assert "Query cannot be empty or of only whitespace" in response.json()["detail"]
 
-def test_extract_missing_query():
+def test_extract_empty_file_id():
+    query = "test_query"
+    file_id = "     "
+    response = client.post("/extract", params={"query": query, "file_id": file_id})
+    assert response.status_code == 400
+    assert "detail" in response.json()
+    assert "File ID cannot be empty or of only whitespace" in response.json()["detail"]
+
+def test_extract_missing_params():
     response = client.post("/extract", params={})
     assert response.status_code == 400
     assert "detail" in response.json()
-    assert "Query cannot be empty or of only whitespace." in response.json()["detail"]
+    assert "File ID cannot be empty or of only whitespace" in response.json()["detail"]
 
 def test_extract_internal_server_error(mocker):
-    mocker.patch("src.main.ChatOpenAI", side_effect=Exception("Mock exception"))
     query = "What is the capital of France?"
-    response = client.post("/extract", params={"query": query})
+    file_id = "test_file_id"
+    mocker.patch("src.main.ChatOpenAI", side_effect=Exception("Mock exception"))
+    mocker.patch("src.main.pc.list_indexes", return_value=Mock(names=lambda: [file_id]))
+    response = client.post("/extract", params={"query": query, "file_id": file_id})
     assert response.status_code == 500
     assert "detail" in response.json()
-    assert "An internal server error occurred." in response.json()["detail"]
+    assert "Internal server error" in response.json()["detail"]
