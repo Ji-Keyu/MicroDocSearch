@@ -7,7 +7,7 @@ import logging
 import uuid
 import os
 import json
-from typing import Dict, List
+from typing import List
 from datetime import timedelta
 import magic
 from fastapi import FastAPI, UploadFile, HTTPException, File, Query
@@ -140,19 +140,19 @@ async def ocr_endpoint(file_id: str = Query("", min_length=1)):
         file_name = file_info.object_name
     except Exception as e:
         raise HTTPException(status_code=404, detail=f"File not found: {file_id}") from e
-    
+
     if file_id in pc.list_indexes().names():
         raise HTTPException(status_code=400, detail=f"{file_id} index already exists in db")
-    else:
-        pc.create_index(
-            name=file_id,
-            dimension=PINECONE_DIMENSION,
-            metric="cosine",
-            spec=ServerlessSpec(
-                cloud="aws",
-                region="us-east-1"
-            )
+
+    pc.create_index(
+        name=file_id,
+        dimension=PINECONE_DIMENSION,
+        metric="cosine",
+        spec=ServerlessSpec(
+            cloud="aws",
+            region="us-east-1"
         )
+    )
 
     content = simulate_ocr(file_name)
 
